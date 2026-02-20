@@ -20,24 +20,24 @@ pipeline {
             }
         }
 
-        stage('Docker Compose Pull') {
+        stage('Docker-Compose Pull') {
             steps {
                 echo "Pulling base images..."
-                sh 'docker compose pull'
+                sh 'docker-compose pull'
             }
         }
 
-        stage('Docker Compose Build') {
+        stage('Docker-Compose Build') {
             steps {
                 echo "Building services..."
-                sh 'docker compose build'
+                sh 'docker-compose build'
             }
         }
 
-        stage('Docker Compose Up') {
+        stage('Docker-Compose Up') {
             steps {
                 echo "Starting containers..."
-                sh 'docker compose up -d'
+                sh 'docker-compose up -d'
             }
         }
 
@@ -53,7 +53,7 @@ pipeline {
 
         always {
             echo "Stopping and cleaning containers..."
-            sh 'docker compose down'
+            sh 'docker-compose down'
         }
 
         success {
