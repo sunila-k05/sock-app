@@ -1,14 +1,13 @@
 pipeline {
     agent any
 
-    options {
-        timestamps()
-        timeout(time: 40, unit: 'MINUTES')
-    }
-
     environment {
         MYSQL_ROOT_PASSWORD = "root123"
-        NAMESPACE = "sock-shop"
+    }
+
+    options {
+        timestamps()
+        timeout(time: 20, unit: 'MINUTES')
     }
 
     stages {
@@ -19,7 +18,13 @@ pipeline {
             }
         }
 
-        // ---------- LOCAL BUILD ----------
+        stage('Docker-Compose Pull') {
+            steps {
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose pull'
+                }
+            }
+        }
 
         stage('Docker-Compose Build') {
             steps {
@@ -29,13 +34,10 @@ pipeline {
             }
         }
 
-        // ---------- SECURITY SCAN ----------
-
-        stage('Trivy Scan') {
+        stage('Trivy Security Scan') {
             steps {
                 sh '''
-                echo "Scanning Docker images with Trivy..."
-
+                echo "Scanning built images with Trivy..."
                 IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
 
                 for image in $IMAGES; do
@@ -46,9 +48,7 @@ pipeline {
             }
         }
 
-        // ---------- OPTIONAL LOCAL RUN ----------
-
-        stage('Docker-Compose Up (Local Test)') {
+        stage('Docker-Compose Up') {
             steps {
                 dir('deploy/docker-compose') {
                     sh 'docker-compose up -d'
@@ -56,52 +56,29 @@ pipeline {
             }
         }
 
-        stage('Verify Local Containers') {
-            steps {
-                sh 'docker ps'
-            }
-        }
-
-        stage('Stop Local Containers') {
-            steps {
-                dir('deploy/docker-compose') {
-                    sh 'docker-compose down || true'
-                }
-            }
-        }
-
-        // ---------- KUBERNETES DEPLOY ----------
-
-        stage('Validate Kubernetes Manifests') {
+        stage('Verify Containers') {
             steps {
                 sh '''
-                kubectl apply --dry-run=client -f deploy/kubernetes/manifests/
+                echo "Running Containers:"
+                docker ps
                 '''
             }
         }
+    }
 
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh '''
-                kubectl apply -f deploy/kubernetes/manifests/
-                '''
+    post {
+        always {
+            dir('deploy/docker-compose') {
+                sh 'docker-compose down || true'
             }
         }
 
-        stage('Wait for Rollout') {
-            steps {
-                sh '''
-                kubectl rollout status deployment/front-end -n $NAMESPACE
-                '''
-            }
+        success {
+            echo "Pipeline completed successfully."
         }
 
-        stage('Verify Pods') {
-            steps {
-                sh '''
-                kubectl get pods -n $NAMESPACE
-                '''
-            }
+        failure {
+            echo "Pipeline failed. Check above logs."
         }
     }
 }
