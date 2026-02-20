@@ -7,9 +7,6 @@ pipeline {
         timeout(time: 10, unit: 'MINUTES')
     }
 
-    environment {
-        COMPOSE_FILE = "docker-compose.yml"
-    }
 
     stages {
 
