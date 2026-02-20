@@ -3,62 +3,53 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds()
         timeout(time: 10, unit: 'MINUTES')
     }
-
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Checking out source code..."
                 checkout scm
             }
         }
 
         stage('Docker-Compose Pull') {
             steps {
-                echo "Pulling base images..."
-                sh 'docker-compose pull'
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose pull'
+                }
             }
         }
 
         stage('Docker-Compose Build') {
             steps {
-                echo "Building services..."
-                sh 'docker-compose build'
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose build'
+                }
             }
         }
 
         stage('Docker-Compose Up') {
             steps {
-                echo "Starting containers..."
-                sh 'docker-compose up -d'
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose up -d'
+                }
             }
         }
 
         stage('Verify Containers') {
             steps {
-                echo "Verifying running containers..."
                 sh 'docker ps'
             }
         }
     }
 
     post {
-
         always {
-            echo "Stopping and cleaning containers..."
-            sh 'docker-compose down'
-        }
-
-        success {
-            echo "CI validation completed successfully."
-        }
-
-        failure {
-            echo "CI validation failed."
+            dir('deploy/docker-compose') {
+                sh 'docker-compose down'
+            }
         }
     }
 }
