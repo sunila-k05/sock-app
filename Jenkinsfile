@@ -3,14 +3,12 @@ pipeline {
 
     options {
         timestamps()
-        timeout(time: 60, unit: 'MINUTES')
+        timeout(time: 40, unit: 'MINUTES')
     }
 
     environment {
-        STAGE_NS = "sock-stage"
-        PROD_NS  = "sock-prod"
-        RELEASE  = "sockshop"
-        CHART_PATH = "deploy/kubernetes/helm-chart"
+        MYSQL_ROOT_PASSWORD = "root123"
+        NAMESPACE = "sock-shop"
     }
 
     stages {
@@ -21,76 +19,88 @@ pipeline {
             }
         }
 
-        stage('Trivy Scan Images') {
+        // ---------- LOCAL BUILD ----------
+
+        stage('Docker-Compose Build') {
+            steps {
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose build'
+                }
+            }
+        }
+
+        // ---------- SECURITY SCAN ----------
+
+        stage('Trivy Scan') {
             steps {
                 sh '''
-                echo "Scanning images..."
+                echo "Scanning Docker images with Trivy..."
+
                 IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
+
                 for image in $IMAGES; do
+                    echo "Scanning $image"
                     trivy image --exit-code 1 --severity HIGH,CRITICAL $image
                 done
                 '''
             }
         }
 
-        // ---------------- STAGING ----------------
+        // ---------- OPTIONAL LOCAL RUN ----------
 
-        stage('Deploy to Staging') {
+        stage('Docker-Compose Up (Local Test)') {
             steps {
-                sh """
-                helm upgrade --install $RELEASE $CHART_PATH \
-                  --namespace $STAGE_NS \
-                  --create-namespace \
-                  -f $CHART_PATH/values-stage.yaml
-                """
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose up -d'
+                }
             }
         }
 
-        stage('Verify Staging Rollout') {
+        stage('Verify Local Containers') {
+            steps {
+                sh 'docker ps'
+            }
+        }
+
+        stage('Stop Local Containers') {
+            steps {
+                dir('deploy/docker-compose') {
+                    sh 'docker-compose down || true'
+                }
+            }
+        }
+
+        // ---------- KUBERNETES DEPLOY ----------
+
+        stage('Validate Kubernetes Manifests') {
             steps {
                 sh '''
-                kubectl rollout status deployment/front-end -n $STAGE_NS
+                kubectl apply --dry-run=client -f deploy/kubernetes/manifests/
                 '''
             }
         }
 
-        // ---------------- APPROVAL ----------------
-
-        stage('Approval for Production') {
-            steps {
-                input message: "Approve deployment to Production?"
-            }
-        }
-
-        // ---------------- PRODUCTION ----------------
-
-        stage('Deploy to Production') {
-            steps {
-                sh """
-                helm upgrade --install $RELEASE $CHART_PATH \
-                  --namespace $PROD_NS \
-                  --create-namespace \
-                  -f $CHART_PATH/values-prod.yaml
-                """
-            }
-        }
-
-        stage('Verify Production Rollout') {
+        stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                kubectl rollout status deployment/front-end -n $PROD_NS
+                kubectl apply -f deploy/kubernetes/manifests/
                 '''
             }
         }
-    }
 
-    post {
-        failure {
-            script {
-                echo "Deployment failed. Rolling back..."
-                sh """
-                helm rollback $RELEASE 1 -n $PROD_NS || true
-                """
+        stage('Wait for Rollout') {
+            steps {
+                sh '''
+                kubectl rollout status deployment/front-end -n $NAMESPACE
+                '''
+            }
+        }
+
+        stage('Verify Pods') {
+            steps {
+                sh '''
+                kubectl get pods -n $NAMESPACE
+                '''
             }
         }
     }
