@@ -1,60 +1,67 @@
-
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 10, unit: 'MINUTES')
+    }
+
+    environment {
+        COMPOSE_FILE = "docker-compose.yml"
+    }
+
     stages {
-        stage('Checkout Code') {
+
+        stage('Checkout') {
             steps {
-                echo "Cloning repository..."
+                echo "Checking out source code..."
                 checkout scm
             }
         }
 
-
-     stage ('docker-compose pull'){
-         steps {
-               sh 'docker compose pull'
-
-}
-
-}
-
-stage ('docker-compose up'){
-     steps{
-sh 'docker-compose up'
-}
-}
-
-stage ('Verify Containers are running'){
-steps{
-sh ' docker ps'
-}
-}
-
-post {
-always {
-sh 'docker-compose down'
-}
-
-success {
-    echo "compose validation successfull"
-}
-
-failure {
-echo "compose validation failed"
-}
-}
-
-     stage('Verify') {
+        stage('Docker Compose Pull') {
             steps {
-                echo "Repository cloned successfully!"
-                sh 'ls -la'
+                echo "Pulling base images..."
+                sh 'docker compose pull'
             }
         }
 
+        stage('Docker Compose Build') {
+            steps {
+                echo "Building services..."
+                sh 'docker compose build'
+            }
+        }
 
+        stage('Docker Compose Up') {
+            steps {
+                echo "Starting containers..."
+                sh 'docker compose up -d'
+            }
+        }
 
+        stage('Verify Containers') {
+            steps {
+                echo "Verifying running containers..."
+                sh 'docker ps'
+            }
+        }
+    }
 
-}
+    post {
 
+        always {
+            echo "Stopping and cleaning containers..."
+            sh 'docker compose down'
+        }
+
+        success {
+            echo "CI validation completed successfully."
+        }
+
+        failure {
+            echo "CI validation failed."
+        }
+    }
 }
