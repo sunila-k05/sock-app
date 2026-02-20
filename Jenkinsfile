@@ -1,14 +1,16 @@
-                                                        
 pipeline {
     agent any
 
-    environment {
-        MYSQL_ROOT_PASSWORD = "root123"
-    }
-
     options {
         timestamps()
-        timeout(time: 10, unit: 'MINUTES')
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    environment {
+        RELEASE = "sockshop"
+        CHART_PATH = "deploy/kubernetes/helm-chart"
+        STAGE_NS = "sock-stage"
+        PROD_NS  = "sock-prod"
     }
 
     stages {
@@ -19,42 +21,55 @@ pipeline {
             }
         }
 
-        stage('Docker-Compose Pull') {
+        stage('Deploy to Staging') {
             steps {
-                dir('deploy/docker-compose') {
-                    sh 'docker-compose pull'
-                }
+                sh '''
+                helm upgrade --install $RELEASE $CHART_PATH \
+                  --namespace $STAGE_NS \
+                  --create-namespace
+                '''
             }
         }
 
-        stage('Docker-Compose Build') {
+        stage('Verify Staging Rollout') {
             steps {
-                dir('deploy/docker-compose') {
-                    sh 'docker-compose build'
-                }
+                sh '''
+                kubectl rollout status deployment/front-end -n $STAGE_NS
+                '''
             }
         }
 
-        stage('Docker-Compose Up') {
+        stage('Approve Production Deployment') {
             steps {
-                dir('deploy/docker-compose') {
-                    sh 'docker-compose up -d'
-                }
+                input "Deploy to Production?"
             }
         }
 
-        stage('Verify Containers') {
+        stage('Deploy to Production') {
             steps {
-                sh 'docker ps'
+                sh '''
+                helm upgrade --install $RELEASE $CHART_PATH \
+                  --namespace $PROD_NS \
+                  --create-namespace
+                '''
+            }
+        }
+
+        stage('Verify Production Rollout') {
+            steps {
+                sh '''
+                kubectl rollout status deployment/front-end -n $PROD_NS
+                '''
             }
         }
     }
 
     post {
-        always {
-            dir('deploy/docker-compose') {
-                sh 'docker-compose down || true'
-            }
+        failure {
+            echo "Deployment failed. Rolling back..."
+            sh '''
+            helm rollback $RELEASE 1 -n $PROD_NS || true
+            '''
         }
     }
 }
