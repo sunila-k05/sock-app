@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        MYSQL_ROOT_PASSWORD = "root123"
+    }
+
     options {
         timestamps()
         timeout(time: 10, unit: 'MINUTES')
@@ -48,7 +52,7 @@ pipeline {
     post {
         always {
             dir('deploy/docker-compose') {
-                sh 'docker-compose down'
+                sh 'docker-compose down || true'
             }
         }
     }
